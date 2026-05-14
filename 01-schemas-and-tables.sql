@@ -1,5 +1,5 @@
 /* ============================================================================
-   01-schemas-and-tables.sql
+   sql/01-schemas-and-tables.sql
    
    Project:  Healthcare Claims ETL Pipeline (Azure SQL + ADF)
    Purpose:  Create the 6 schemas and the Claim table across all 5 ETL layers.
