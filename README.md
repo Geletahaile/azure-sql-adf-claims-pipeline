@@ -216,7 +216,7 @@ Every run, whether successful or failed, writes a row to `meta.PipelineLog` with
 ## Repository Structure
 
 ```
-geletaedw-portfolio/
+azure-sql-adf-claims-pipeline/
 ├── README.md                              ← this file
 ├── architecture/
 │   ├── pipeline-architecture.png          ← top-level Azure diagram
