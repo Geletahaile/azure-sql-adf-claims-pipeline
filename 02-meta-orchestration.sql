@@ -1,5 +1,5 @@
 /* ============================================================================
-   02-meta-orchestration.sql
+   sql/02-meta-orchestration.sql
    
    Project:  Healthcare Claims ETL Pipeline (Azure SQL + ADF)
    Purpose:  Create the meta schema tables that drive metadata-driven ADF
