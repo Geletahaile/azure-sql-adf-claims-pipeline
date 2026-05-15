@@ -1,0 +1,486 @@
+{
+    "name": "pl_load_claims_edw",
+    "properties": {
+        "activities": [
+            {
+                "name": "GetPipelineID",
+                "type": "Lookup",
+                "dependsOn": [],
+                "policy": {
+                    "timeout": "0.12:00:00",
+                    "retry": 0,
+                    "retryIntervalInSeconds": 30,
+                    "secureOutput": false,
+                    "secureInput": false
+                },
+                "userProperties": [],
+                "typeProperties": {
+                    "source": {
+                        "type": "AzureSqlSource",
+                        "sqlReaderQuery": {
+                            "value": "EXEC meta.sp_LogPipelineStart \n    @PipelineName = 'pl_load_claims_edw', \n    @GroupName = '@{pipeline().parameters.GroupName}';",
+                            "type": "Expression"
+                        },
+                        "queryTimeout": "02:00:00",
+                        "partitionOption": "None"
+                    },
+                    "dataset": {
+                        "referenceName": "DS_AzureSql_Generic",
+                        "type": "DatasetReference",
+                        "parameters": {
+                            "SchemaName": "meta",
+                            "TableName": "PipelineLog"
+                        }
+                    }
+                }
+            },
+            {
+                "name": "SetPipelineID",
+                "type": "SetVariable",
+                "dependsOn": [
+                    {
+                        "activity": "GetPipelineID",
+                        "dependencyConditions": [
+                            "Succeeded"
+                        ]
+                    }
+                ],
+                "policy": {
+                    "secureOutput": false,
+                    "secureInput": false
+                },
+                "userProperties": [],
+                "typeProperties": {
+                    "variableName": "PipelineID",
+                    "value": {
+                        "value": "@string(activity('GetPipelineID').output.firstRow.PipelineID)",
+                        "type": "Expression"
+                    }
+                }
+            },
+            {
+                "name": "GetGroupID",
+                "type": "Lookup",
+                "dependsOn": [
+                    {
+                        "activity": "SetPipelineID",
+                        "dependencyConditions": [
+                            "Succeeded"
+                        ]
+                    }
+                ],
+                "policy": {
+                    "timeout": "0.12:00:00",
+                    "retry": 0,
+                    "retryIntervalInSeconds": 30,
+                    "secureOutput": false,
+                    "secureInput": false
+                },
+                "userProperties": [],
+                "typeProperties": {
+                    "source": {
+                        "type": "AzureSqlSource",
+                        "sqlReaderQuery": {
+                            "value": "SELECT GroupID \nFROM meta.TableGroup \nWHERE GroupName = '@{pipeline().parameters.GroupName}';",
+                            "type": "Expression"
+                        },
+                        "queryTimeout": "02:00:00",
+                        "partitionOption": "None"
+                    },
+                    "dataset": {
+                        "referenceName": "DS_AzureSql_Generic",
+                        "type": "DatasetReference",
+                        "parameters": {
+                            "SchemaName": "meta",
+                            "TableName": "TableGroup"
+                        }
+                    }
+                }
+            },
+            {
+                "name": "SetGroupID",
+                "type": "SetVariable",
+                "dependsOn": [
+                    {
+                        "activity": "GetGroupID",
+                        "dependencyConditions": [
+                            "Succeeded"
+                        ]
+                    }
+                ],
+                "policy": {
+                    "secureOutput": false,
+                    "secureInput": false
+                },
+                "userProperties": [],
+                "typeProperties": {
+                    "variableName": "GroupID",
+                    "value": {
+                        "value": "@string(activity('GetGroupID').output.firstRow.GroupID)",
+                        "type": "Expression"
+                    }
+                }
+            },
+            {
+                "name": "GetTablesForGroup",
+                "type": "Lookup",
+                "dependsOn": [
+                    {
+                        "activity": "SetGroupID",
+                        "dependencyConditions": [
+                            "Succeeded"
+                        ]
+                    }
+                ],
+                "policy": {
+                    "timeout": "0.12:00:00",
+                    "retry": 0,
+                    "retryIntervalInSeconds": 30,
+                    "secureOutput": false,
+                    "secureInput": false
+                },
+                "userProperties": [],
+                "typeProperties": {
+                    "source": {
+                        "type": "AzureSqlSource",
+                        "sqlReaderQuery": {
+                            "value": "SELECT SourceTableName, TargetSchemaName, TargetTableName,\n  SourceFolderPath, SourceFileName, \n  ExtractStoredProc, StageStoredProc, LoadStoredProc\nFROM meta.SourceTableLoad\nWHERE GroupID = @{variables('GroupID')}\n  AND IsActive = 1\nORDER BY LoadOrder;",
+                            "type": "Expression"
+                        },
+                        "queryTimeout": "02:00:00",
+                        "partitionOption": "None"
+                    },
+                    "dataset": {
+                        "referenceName": "DS_AzureSql_Generic",
+                        "type": "DatasetReference",
+                        "parameters": {
+                            "SchemaName": "meta",
+                            "TableName": "SourceTableLoad"
+                        }
+                    },
+                    "firstRowOnly": false
+                }
+            },
+            {
+                "name": "LoopTablesToLoad",
+                "type": "ForEach",
+                "dependsOn": [
+                    {
+                        "activity": "GetTablesForGroup",
+                        "dependencyConditions": [
+                            "Succeeded"
+                        ]
+                    }
+                ],
+                "userProperties": [],
+                "typeProperties": {
+                    "items": {
+                        "value": "@activity('GetTablesForGroup').output.value",
+                        "type": "Expression"
+                    },
+                    "isSequential": true,
+                    "activities": [
+                        {
+                            "name": "CopyCsvToSrc",
+                            "type": "Copy",
+                            "dependsOn": [],
+                            "policy": {
+                                "timeout": "0.12:00:00",
+                                "retry": 0,
+                                "retryIntervalInSeconds": 30,
+                                "secureOutput": false,
+                                "secureInput": false
+                            },
+                            "userProperties": [],
+                            "typeProperties": {
+                                "source": {
+                                    "type": "DelimitedTextSource",
+                                    "storeSettings": {
+                                        "type": "AzureBlobFSReadSettings",
+                                        "recursive": false,
+                                        "enablePartitionDiscovery": false
+                                    },
+                                    "formatSettings": {
+                                        "type": "DelimitedTextReadSettings"
+                                    }
+                                },
+                                "sink": {
+                                    "type": "AzureSqlSink",
+                                    "preCopyScript": {
+                                        "value": "TRUNCATE TABLE src.@{item().SourceTableName}",
+                                        "type": "Expression"
+                                    },
+                                    "writeBehavior": "insert",
+                                    "sqlWriterUseTableLock": false,
+                                    "disableMetricsCollection": false
+                                },
+                                "enableStaging": false,
+                                "translator": {
+                                    "type": "TabularTranslator",
+                                    "typeConversion": true,
+                                    "typeConversionSettings": {
+                                        "allowDataTruncation": true,
+                                        "treatBooleanAsNumber": false
+                                    }
+                                }
+                            },
+                            "inputs": [
+                                {
+                                    "referenceName": "DS_ADLS_CSV_Generic",
+                                    "type": "DatasetReference",
+                                    "parameters": {
+                                        "FolderPath": {
+                                            "value": "@item().SourceFolderPath",
+                                            "type": "Expression"
+                                        },
+                                        "FileName": {
+                                            "value": "@item().SourceFileName",
+                                            "type": "Expression"
+                                        }
+                                    }
+                                }
+                            ],
+                            "outputs": [
+                                {
+                                    "referenceName": "DS_AzureSql_Generic",
+                                    "type": "DatasetReference",
+                                    "parameters": {
+                                        "SchemaName": "src",
+                                        "TableName": {
+                                            "value": "@item().SourceTableName",
+                                            "type": "Expression"
+                                        }
+                                    }
+                                }
+                            ]
+                        },
+                        {
+                            "name": "ExtractToRaw",
+                            "type": "SqlServerStoredProcedure",
+                            "dependsOn": [
+                                {
+                                    "activity": "CopyCsvToSrc",
+                                    "dependencyConditions": [
+                                        "Succeeded"
+                                    ]
+                                }
+                            ],
+                            "policy": {
+                                "timeout": "0.12:00:00",
+                                "retry": 0,
+                                "retryIntervalInSeconds": 30,
+                                "secureOutput": false,
+                                "secureInput": false
+                            },
+                            "userProperties": [],
+                            "typeProperties": {
+                                "storedProcedureName": "@{item().ExtractStoredProc}",
+                                "storedProcedureParameters": {
+                                    "SourceSystem": {
+                                        "value": "CSV-IMPORT",
+                                        "type": "String"
+                                    }
+                                }
+                            },
+                            "linkedServiceName": {
+                                "referenceName": "LS_AzureSqlDb",
+                                "type": "LinkedServiceReference"
+                            }
+                        },
+                        {
+                            "name": "StageRawToStg",
+                            "type": "SqlServerStoredProcedure",
+                            "dependsOn": [
+                                {
+                                    "activity": "ExtractToRaw",
+                                    "dependencyConditions": [
+                                        "Succeeded"
+                                    ]
+                                }
+                            ],
+                            "policy": {
+                                "timeout": "0.12:00:00",
+                                "retry": 0,
+                                "retryIntervalInSeconds": 30,
+                                "secureOutput": false,
+                                "secureInput": false
+                            },
+                            "userProperties": [],
+                            "typeProperties": {
+                                "storedProcedureName": "@{item().StageStoredProc}",
+                                "storedProcedureParameters": {
+                                    "PipelineID": {
+                                        "value": "@int(variables('PipelineID'))",
+                                        "type": "Int64"
+                                    }
+                                }
+                            },
+                            "linkedServiceName": {
+                                "referenceName": "LS_AzureSqlDb",
+                                "type": "LinkedServiceReference"
+                            }
+                        },
+                        {
+                            "name": "LoadStgToDw",
+                            "type": "SqlServerStoredProcedure",
+                            "dependsOn": [
+                                {
+                                    "activity": "StageRawToStg",
+                                    "dependencyConditions": [
+                                        "Succeeded"
+                                    ]
+                                }
+                            ],
+                            "policy": {
+                                "timeout": "0.12:00:00",
+                                "retry": 0,
+                                "retryIntervalInSeconds": 30,
+                                "secureOutput": false,
+                                "secureInput": false
+                            },
+                            "userProperties": [],
+                            "typeProperties": {
+                                "storedProcedureName": "@{item().LoadStoredProc}",
+                                "storedProcedureParameters": {
+                                    "PipelineID": {
+                                        "value": "@int(variables('PipelineID'))",
+                                        "type": "Int64"
+                                    }
+                                }
+                            },
+                            "linkedServiceName": {
+                                "referenceName": "LS_AzureSqlDb",
+                                "type": "LinkedServiceReference"
+                            }
+                        }
+                    ]
+                }
+            },
+            {
+                "name": "LogPipelineSuccess",
+                "type": "SqlServerStoredProcedure",
+                "dependsOn": [
+                    {
+                        "activity": "LoopTablesToLoad",
+                        "dependencyConditions": [
+                            "Succeeded"
+                        ]
+                    }
+                ],
+                "policy": {
+                    "timeout": "0.12:00:00",
+                    "retry": 0,
+                    "retryIntervalInSeconds": 30,
+                    "secureOutput": false,
+                    "secureInput": false
+                },
+                "userProperties": [],
+                "typeProperties": {
+                    "storedProcedureName": "[meta].[sp_LogPipelineEnd]",
+                    "storedProcedureParameters": {
+                        "PipelineID": {
+                            "value": {
+                                "value": "@int(variables('PipelineID'))",
+                                "type": "Expression"
+                            },
+                            "type": "Int64"
+                        },
+                        "Status": {
+                            "value": "Succeeded",
+                            "type": "String"
+                        },
+                        "ErrorActivity": {
+                            "value": "",
+                            "type": "String"
+                        },
+                        "ErrorMessage": {
+                            "value": "",
+                            "type": "String"
+                        }
+                    }
+                },
+                "linkedServiceName": {
+                    "referenceName": "LS_AzureSqlDb",
+                    "type": "LinkedServiceReference"
+                }
+            },
+            {
+                "name": "LogPipelineFailure",
+                "type": "SqlServerStoredProcedure",
+                "dependsOn": [
+                    {
+                        "activity": "LoopTablesToLoad",
+                        "dependencyConditions": [
+                            "Failed"
+                        ]
+                    }
+                ],
+                "policy": {
+                    "timeout": "0.12:00:00",
+                    "retry": 0,
+                    "retryIntervalInSeconds": 30,
+                    "secureOutput": false,
+                    "secureInput": false
+                },
+                "userProperties": [],
+                "typeProperties": {
+                    "storedProcedureName": "[meta].[sp_LogPipelineEnd]",
+                    "storedProcedureParameters": {
+                        "PipelineID": {
+                            "value": "@int(variables('PipelineID'))",
+                            "type": "Int64"
+                        },
+                        "Status": {
+                            "value": "Failed",
+                            "type": "String"
+                        },
+                        "ErrorActivity": {
+                            "value": "LoopTablesToLoad",
+                            "type": "String"
+                        },
+                        "ErrorMessage": {
+                            "value": "@activity('LoopTablesToLoad').Error.Message",
+                            "type": "String"
+                        }
+                    }
+                },
+                "linkedServiceName": {
+                    "referenceName": "LS_AzureSqlDb",
+                    "type": "LinkedServiceReference"
+                }
+            }
+        ],
+        "parameters": {
+            "GroupName": {
+                "type": "string",
+                "defaultValue": "CLAIMS"
+            },
+            "FinalSchemaName": {
+                "type": "string",
+                "defaultValue": "dw"
+            }
+        },
+        "variables": {
+            "PipelineID": {
+                "type": "String",
+                "defaultValue": "0"
+            },
+            "GroupID": {
+                "type": "String",
+                "defaultValue": "0"
+            },
+            "TableArray": {
+                "type": "Array"
+            },
+            "ErrorActivity": {
+                "type": "String"
+            },
+            "ErrorMessage": {
+                "type": "String"
+            }
+        },
+        "annotations": [],
+        "lastPublishTime": "2026-05-10T14:28:38Z"
+    },
+    "type": "Microsoft.DataFactory/factories/pipelines"
+}
